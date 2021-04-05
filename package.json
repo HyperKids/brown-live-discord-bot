@@ -1,0 +1,10 @@
+{
+  "name": "brown-live-discord-bot",
+  "version": "1.0.0",
+  "description": "Discord Bot for Brown Live",
+  "main": "index.js",
+  "repository": "https://github.com/HyperKids/brown-live-discord-bot",
+  "author": "Isaac Kim",
+  "license": "none",
+  "private": true
+}
