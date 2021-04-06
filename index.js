@@ -3,17 +3,65 @@ const Discord = require("discord.js");
 const client = new Discord.Client();
 const fs = require("fs");
 
+const config = JSON.parse(fs.readFileSync("config.json", "utf-8"));
+var constants = require("./constants");
+
 const { GoogleSpreadsheet } = require("google-spreadsheet");
-const doc = new GoogleSpreadsheet(
-  "19-2UBOz-pBC08JnTBp0sgXPkCrHlMJw3Gd5WkxWnEAc"
-);
+const doc = new GoogleSpreadsheet(process.env.GOOGLE_SPREADSHEET);
 
 client.on("ready", () => {
   // client.user.setActivity("the BEST server!", { type: "WATCHING" });
   console.log(`Logged in as ${client.user.tag}!`);
   updateVerifiedStudents();
-  setInterval(() => updateVerifiedStudents(), 1000 * 60);
+  setInterval(() => updateVerifiedStudents(), 1000 * 15);
+  client.guilds.fetch("828708982506913792")
 });
+
+client.on("message", (msg) => {
+  if (!msg.author.bot && msg.type === "DEFAULT") {
+    if (msg.content.substring(0, config.prefix.length) === config.prefix) {
+      let message = msg.content;
+      let args = message.substring(1).split(" ");
+      var cmd = args[0];
+      args = args.splice(1);
+
+      msg.guild.members.fetch(msg.author.id).then((user) => {
+        var listOfRoles = user._roles;
+        var isPresident = listOfRoles.includes("445482959085240331");
+        var isEboard = listOfRoles.includes("442756821590081537");
+        var isPastEboard = listOfRoles.includes("588114684318580770");
+        var isCaptain = listOfRoles.includes("681557519931408397");
+        var isHyper = false;
+        if (msg.author.id == "196685652249673728") {
+          isHyper = true;
+        }
+
+        switch (cmd) {
+          case "update":
+            if (isHyper) {
+              constants[args[0]]?.forEach((obj) => {
+                msg.channel.send({ content: obj.text, embed: obj.embed });
+              });
+            }
+            break;
+        }
+      });
+    }
+  }
+});
+
+client.on("guildMemberAdd", (member) => {
+  if (member.guild.id === "828708982506913792") {
+    client.channels.cache
+      .get("828765547663196191")
+      .send({ content: `<@${member.id}>`, embed: constants.autowelcome.embed });
+    member.send({ content: constants.autowelcome.dm });
+  }
+});
+
+// client.on("messageReactionAdd", (reaction, user) => {
+//   reaction.message.react(reaction.emoji)
+// })
 
 async function updateVerifiedStudents() {
   // console.log("updateVerifiedStudents was called at " + new Date());
