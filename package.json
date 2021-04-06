@@ -6,5 +6,13 @@
   "repository": "https://github.com/HyperKids/brown-live-discord-bot",
   "author": "Isaac Kim",
   "license": "none",
-  "private": true
+  "private": true,
+  "dependencies": {
+    "discord.js": "^12.5.3",
+    "dotenv": "^8.2.0",
+    "google-spreadsheet": "^3.1.15"
+  },
+  "scripts": {
+    "start": "node index.js"
+  }
 }
