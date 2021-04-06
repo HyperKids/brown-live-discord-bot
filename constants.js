@@ -108,22 +108,6 @@ module.exports.partners = [
   },
   {
     embed: {
-      title: "Brown '25",
-      description:
-        "Brown '25 is a student-run community of Class of 2025 Brown and RISD students.",
-      color: 0xc00404,
-      footer: {
-        icon_url:
-          "https://media.discordapp.net/attachments/828880943036104725/828887568010444810/brownu-logo-small.png",
-        text: "Partnered Server",
-      },
-    },
-  },
-  {
-    text: "https://discord.gg/vujJZgzWt3"
-  },
-  {
-    embed: {
       title: "Brown University Subreddit",
       description:
         "The Brown University subreddit is a place to discuss all things Brown University, the Ivy League institution in Providence, Rhode Island.",
@@ -139,6 +123,25 @@ module.exports.partners = [
     text: "<https://reddit.com/r/BrownU>"
   }
 ];
+
+module.exports.co2025 = [
+  {
+    embed: {
+      title: "Brown '25",
+      description:
+        "Brown '25 is a student-run community of Class of 2025 Brown and RISD students.",
+      color: 0xc00404,
+      footer: {
+        icon_url:
+          "https://media.discordapp.net/attachments/828880943036104725/828887568010444810/brownu-logo-small.png",
+        text: "Partnered Server",
+      },
+    },
+  },
+  {
+    text: "https://discord.gg/vujJZgzWt3"
+  }
+]
 
 module.exports.autowelcome = {
   embed: {
