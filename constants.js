@@ -42,7 +42,16 @@ module.exports.welcome = [
             "If somebody says something that breaks our rules, annoys, or offends you, contact a staff member. Don't start a flame war in the channel.",
         },
         {
-          name: "7. Have fun!",
+          name: "6. Keep the server friendly",
+          value:
+            "If somebody says something that breaks our rules, annoys, or offends you, contact a staff member. Don't start a flame war in the channel.",
+        },
+        {
+          name: "7. Follow Discord's Terms of Service",
+          value: "Please familiarize yourself with Discord's Terms of Service and Community Guidelines and abide by them. https://dis.gd/terms https://dis.gd/guidelines"
+        },
+        {
+          name: "8. Have fun!",
           value: "Use common sense, and enjoy our community!",
         },
       ],
@@ -52,7 +61,7 @@ module.exports.welcome = [
     embed: {
       title: "Get verified across the Brown Live network!",
       description:
-        "Visit our verification form at https://bit.ly/brownulive and type in your DiscordTag.  Once you're verified, you'll get access to all the private channels, where everything happens!",
+        "Visit our verification form at https://bit.ly/brownulive and type in your DiscordTag.  Once you're verified, you'll get access to all the private channels, where everything happens! Plus, you'll be automatically verified on some of our partnered servers!",
       color: 0x43b581,
       timestamp: new Date(),
       footer: {
@@ -62,6 +71,9 @@ module.exports.welcome = [
       },
     },
   },
+  {
+    text: "Server Invite Link: https://discord.gg/R3WRygthgX"
+  }
 ];
 
 module.exports.partners = [
@@ -133,10 +145,10 @@ module.exports.autowelcome = {
     title: "Welcome to Brown Live!",
     description: "Welcome to Brown Live, a hub for Brown and RISD students! To get started, read the rules in <#828714184778579968>, then fill out this Google Form to get access to the rest of the channels! Thanks for joining, and talk to you soon! https://bit.ly/brownulive",
     color: 0xc00404,
+    timestamp: new Date(),
     footer: {
       icon_url: "https://media.discordapp.net/attachments/828880943036104725/828887568010444810/brownu-logo-small.png",
       text: "Welcome!",
-      timestamp: new Date()
     },
   },
   dm: "Welcome to the Brown Live Discord!\nPlease take some time to read the <#828714184778579968> before using the server.\n\nTo view all the channels (and join the party), fill out this Google Form! You'll get automatic verification across many Brown Live partnered servers as well! <https://bit.ly/brownulive>\n\nThanks for joining, and enjoy your time here!\nhttps://discord.gg/R3WRygthgX"
