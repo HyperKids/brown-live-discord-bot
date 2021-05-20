@@ -110,11 +110,11 @@ async function updateVerifiedStudents() {
                     console.log("+" + username);
                   } else if (negdiff.includes(username + "#" + discrim)) {
                     guilduser.roles.remove(verifiedroleid).catch(console.error);
-                    client.users.cache
+                    /*client.users.cache
                       .get(guilduser.id)
                       .send(
                         `Hi! Just letting you know that your \`Verified\` status was removed on the ${guild.name} server. This is likely caused by a change in your username, or by you unlinking your Discord account in the verification form. If you changed your username, please update it on the student verification form at https://bit.ly/brownulive.`
-                      );
+                      );*/
                     console.log("-" + username);
                   } else {
                     // console.error(
