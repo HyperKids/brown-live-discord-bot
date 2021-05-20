@@ -121,6 +121,21 @@ module.exports.partners = [
   },
   {
     text: "<https://reddit.com/r/BrownU>"
+  },
+  {
+    embed: {
+      title: "Brown University Poker Club",
+      description: "The Brown Poker Club is a place where students can gather together to enjoy games of poker and become more methodical poker players through discussion and practice. We will be hosting weekly online poker meetings throughout the year where we will be analyzing poker videos as well as playing no-limit Texas Hold’em tournaments. As your poker skills improve, you will also have the opportunity to join the Brown Poker Team and play against elite players from other colleges. Students of all skill levels are welcome.",
+      color: 0xc00404,
+      footer: {
+        icon_url:
+          "https://media.discordapp.net/attachments/828880943036104725/828887568010444810/brownu-logo-small.png",
+        text: "Partnered Server",
+      },
+    }
+  },
+  {
+    text: "https://discord.gg/brownesports"
   }
 ];
 
