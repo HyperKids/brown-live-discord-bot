@@ -14,5 +14,10 @@
   },
   "scripts": {
     "start": "node index.js"
+  },
+  "prettier": {},
+  "devDependencies": {
+    "@types/google-spreadsheet": "^3.3.2",
+    "@types/node": "^20.2.1"
   }
 }

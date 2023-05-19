@@ -1,60 +1,68 @@
 require("dotenv").config();
+
+if (
+  !process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ||
+  !process.env.GOOGLE_PRIVATE_KEY ||
+  !process.env.DISCORDBOTTOKEN ||
+  !process.env.GOOGLE_SPREADSHEET
+) {
+  console.error("Environment variables in .env not defined!");
+  process.exit(1);
+}
+
 const Discord = require("discord.js");
 const client = new Discord.Client();
 const fs = require("fs");
 
 const config = JSON.parse(fs.readFileSync("config.json", "utf-8"));
-var constants = require("./constants");
+const constants = require("./constants");
 
 const { GoogleSpreadsheet } = require("google-spreadsheet");
 const doc = new GoogleSpreadsheet(process.env.GOOGLE_SPREADSHEET);
 
-client.on("ready", () => {
+client.on("ready", async () => {
   // client.user.setActivity("the BEST server!", { type: "WATCHING" });
-  console.log(`Logged in as ${client.user.tag}!`);
-  updateVerifiedStudents();
+  console.log(`Logged in as ${client.user?.tag}!`);
+  client.guilds.fetch("828708982506913792");
+
+  await doc.useServiceAccountAuth({
+    client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    private_key: process.env.GOOGLE_PRIVATE_KEY,
+  });
+  await doc.loadInfo();
+
   setInterval(() => updateVerifiedStudents(), 1000 * 15);
-  client.guilds.fetch("828708982506913792")
 });
 
 client.on("message", (msg) => {
   if (!msg.author.bot && msg.type === "DEFAULT") {
     if (msg.content.substring(0, config.prefix.length) === config.prefix) {
-      let message = msg.content;
+      const message = msg.content;
       let args = message.substring(1).split(" ");
-      var cmd = args[0];
+      const cmd = args[0];
       args = args.splice(1);
 
-      msg.guild.members.fetch(msg.author.id).then((user) => {
-        var listOfRoles = user._roles;
-        var isPresident = listOfRoles.includes("445482959085240331");
-        var isEboard = listOfRoles.includes("442756821590081537");
-        var isPastEboard = listOfRoles.includes("588114684318580770");
-        var isCaptain = listOfRoles.includes("681557519931408397");
-        var isHyper = false;
-        if (msg.author.id == "196685652249673728") {
-          isHyper = true;
-        }
+      const isHyper = msg.author.id == "196685652249673728";
 
-        switch (cmd) {
-          case "update":
-            if (isHyper) {
-              constants[args[0]]?.forEach((obj) => {
-                msg.channel.send({ content: obj.text, embed: obj.embed });
-              });
-            }
-            break;
-        }
-      });
+      switch (cmd) {
+        case "update":
+          if (isHyper) {
+            constants[args[0]]?.forEach((obj) => {
+              msg.channel.send({ content: obj.text, embed: obj.embed });
+            });
+          }
+          break;
+      }
     }
   }
 });
 
 client.on("guildMemberAdd", (member) => {
   if (member.guild.id === "828708982506913792") {
-    client.channels.cache
-      .get("828765547663196191")
-      .send({ content: `<@${member.id}>`, embed: constants.autowelcome.embed });
+    client.channels.cache.get("828765547663196191")?.send({
+      content: `<@${member.id}>`,
+      embed: constants.autowelcome.embed,
+    });
     member.send({ content: constants.autowelcome.dm });
   }
 });
@@ -64,79 +72,111 @@ client.on("guildMemberAdd", (member) => {
 // })
 
 async function updateVerifiedStudents() {
-  // console.log("updateVerifiedStudents was called at " + new Date());
-  if (
-    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
-    process.env.GOOGLE_PRIVATE_KEY
-  ) {
-    await doc.useServiceAccountAuth({
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY,
-    });
-    await doc.loadInfo();
-    const sheet = doc.sheetsByIndex[0];
-    const rows = await sheet.getRows();
-    const col0 = rows.map((item) => item.DiscordTag);
-    let servers = JSON.parse(fs.readFileSync("./verification.json", "utf-8"));
-    servers.forEach(({ guildid, verifiedroleid }) => {
-      client.guilds.fetch(guildid).then((guild) => {
-        guild.members.fetch().then((members) => {
-          var verifiedrolemembers = guild.roles.cache
-            .get(verifiedroleid)
-            .members.map((m) => m.user.tag.toLowerCase());
-          var gsheettags = col0.map((v) => v.toLowerCase());
-          var posdiff = gsheettags
-            .filter((x) => !verifiedrolemembers.includes(x.toLowerCase()))
-            .map((v) => v.toLowerCase()); // filters to differences between the two arrays - verifiedrolemembers is
-          // current members on the server with the "Verified" role, res.data.values[0]
-          // is Google Form list of DiscordTags that should have the role
-          // var posdiff = diff // diff.filter((x) => gsheettags.includes(x));
-          var negdiff = verifiedrolemembers
-            .filter((x) => !gsheettags.includes(x.toLowerCase()))
-            .map((v) => v.toLowerCase()); // diff.filter((x) => verifiedrolemembers.includes(x));
-          var diff = posdiff.concat(negdiff);
-          diff.forEach((DiscordTag) => {
-            let user = client.users.cache.find(
-              (u) => u.tag.toLowerCase() === DiscordTag.toLowerCase()
-            )?.id;
-            if (user) {
-              let guilduser = guild.members
-                .fetch(user)
-                .then((guilduser) => {
-                  let username = guilduser.user.username.toLowerCase();
-                  let discrim = guilduser.user.discriminator;
-                  if (posdiff.includes(username + "#" + discrim)) {
-                    guilduser.roles.add(verifiedroleid).catch(console.error);
-                    console.log("+" + username);
-                  } else if (negdiff.includes(username + "#" + discrim)) {
-                    guilduser.roles.remove(verifiedroleid).catch(console.error);
-                    /*client.users.cache
-                      .get(guilduser.id)
-                      .send(
-                        `Hi! Just letting you know that your \`Verified\` status was removed on the ${guild.name} server. This is likely caused by a change in your username, or by you unlinking your Discord account in the verification form. If you changed your username, please update it on the student verification form at https://bit.ly/brownulive.`
-                      );*/
-                    console.log("-" + username);
-                  } else {
-                    // console.error(
-                    //   `No clue what to do with this user! ${
-                    //     username + "#" + discrim
-                    //   }`
-                    // );
-                  }
-                })
-                .catch(console.error);
-            } else {
-              // console.log(`${DiscordTag} is invalid!`);
-            }
-          });
+  /* Three columns in the Google Sheet:
+   * 1. DiscordTag (automatically filled in by Google Form)
+   * 2. DiscordTagCache (copy of DiscordTag made by this function)
+   * 3. DiscordId (filled in by this function)
+   * If DiscordTag Cache is different from DiscordTag, then the DiscordId is updated.
+   */
+  const promises = [];
+
+  const sheet = doc.sheetsByIndex[0];
+  const rows = await sheet.getRows();
+  const servers = require("./verification.json");
+
+  // Get the DiscordIds from the DiscordTags (if necessary)
+  const updatedRows = rows.filter(
+    (row) => row.DiscordTagCache !== row.DiscordTag
+  );
+  for (const row of updatedRows) {
+    let user = client.users.cache.find(
+      (u) => u.tag.toLowerCase() === row.DiscordTag.toLowerCase()
+    );
+    if (!user) continue;
+
+    row.DiscordId = user.id;
+    row.DiscordTagCache = row.DiscordTag;
+    promises.push(row.save());
+  }
+
+  /* servers.forEach(({ guildid: guildId, verifiedroleid: verifiedRoleId }) => {
+    client.guilds.fetch(guildId).then((guild) => {
+      guild.members.fetch().then((members) => {
+        const verifiedRoleMembers = guild.roles.cache
+          .get(verifiedRoleId)
+          ?.members.map((m) => m.user.tag.toLowerCase());
+        const gSheetTags = discordUsernames.map((v) => v.toLowerCase());
+        const posDiff = gSheetTags
+          .filter((x) => !verifiedRoleMembers?.includes(x.toLowerCase()))
+          .map((v) => v.toLowerCase()); // filters to differences between the two arrays - verifiedRoleMembers is
+        // current members on the server with the "Verified" role, res.data.values[0]
+        // is Google Form list of DiscordTags that should have the role
+        // const posdiff = diff // diff.filter((x) => gsheettags.includes(x));
+        const negDiff = verifiedRoleMembers
+          .filter((x) => !gSheetTags.includes(x.toLowerCase()))
+          .map((v) => v.toLowerCase()); // diff.filter((x) => verifiedrolemembers.includes(x));
+        const diff = posDiff.concat(negDiff);
+        diff.forEach((DiscordTag) => {
+          const user = client.users.cache.find(
+            (u) => u.tag.toLowerCase() === DiscordTag.toLowerCase()
+          )?.id;
+          if (user) {
+            const guildUser = guild.members
+              .fetch(user)
+              .then((guildUser) => {
+                const username = guildUser.user.username.toLowerCase();
+                const discrim = guildUser.user.discriminator;
+                if (posDiff.includes(username + "#" + discrim)) {
+                  guildUser.roles.add(verifiedRoleId).catch(console.error);
+                  console.log("+" + username);
+                } else if (negDiff.includes(username + "#" + discrim)) {
+                  guildUser.roles.remove(verifiedRoleId).catch(console.error);
+                  console.log("-" + username);
+                }
+              })
+              .catch(console.error);
+          } else {
+            // console.log(`${DiscordTag} is invalid!`);
+          }
         });
       });
     });
-  } else {
-    console.log(
-      "GCP_API_KEY in .env is not defined! Unable to update verified student roles."
-    );
-  }
+  }); */
+
+  promises.push(
+    servers.map(async (server) => {
+      const guild = await client.guilds.fetch(server.guildid);
+      const members = await guild.members.fetch();
+      const verifiedRole = guild.roles.cache.get(server.verifiedroleid);
+      if (!verifiedRole) {
+        console.error(
+          `Verified role ${server.verifiedroleid} not found in ${guild.name}!`
+        );
+        return;
+      }
+
+      const verifiedRoleMembers = verifiedRole.members.map((m) => m.user.id);
+      const sheetVerifiedMembers = rows.map((row) => row.DiscordId);
+      const posDiff = sheetVerifiedMembers.filter(
+        (x) => !verifiedRoleMembers.includes(x)
+      );
+      const negDiff = verifiedRoleMembers.filter(
+        (x) => !sheetVerifiedMembers.includes(x)
+      );
+      for (const userId of posDiff) {
+        await guild.members.cache.get(userId)?.roles.add(verifiedRole);
+      }
+      for (const userId of negDiff) {
+        await guild.members.cache.get(userId)?.roles.remove(verifiedRole);
+      }
+
+      console.log(
+        `Updated ${guild.name} with ${posDiff.length} new members and ${negDiff.length} removed members.`
+      );
+    })
+  );
+
+  await Promise.all(promises).catch(console.error);
 }
 
 client.login(process.env.DISCORDBOTTOKEN);
