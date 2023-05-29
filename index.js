@@ -11,7 +11,12 @@ if (
 }
 
 const Discord = require("discord.js");
-const client = new Discord.Client();
+const client = new Discord.Client({
+  intents: [
+    Discord.GatewayIntentBits.Guilds,
+    Discord.GatewayIntentBits.GuildMembers,
+  ],
+});
 const fs = require("fs");
 
 const config = JSON.parse(fs.readFileSync("config.json", "utf-8"));
@@ -23,7 +28,7 @@ const doc = new GoogleSpreadsheet(process.env.GOOGLE_SPREADSHEET);
 client.on("ready", async () => {
   // client.user.setActivity("the BEST server!", { type: "WATCHING" });
   console.log(`Logged in as ${client.user?.tag}!`);
-  client.guilds.fetch("828708982506913792");
+  client.guilds.fetch("828708982506913792"); // TODO: don't hardcode this
 
   await doc.useServiceAccountAuth({
     client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -31,7 +36,7 @@ client.on("ready", async () => {
   });
   await doc.loadInfo();
 
-  setInterval(() => updateVerifiedStudents(), 1000 * 15);
+  setInterval(updateVerifiedStudents, 1000 * 15);
 });
 
 client.on("message", (msg) => {
@@ -48,7 +53,7 @@ client.on("message", (msg) => {
         case "update":
           if (isHyper) {
             constants[args[0]]?.forEach((obj) => {
-              msg.channel.send({ content: obj.text, embed: obj.embed });
+              msg.channel.send({ content: obj.text, embeds: [obj.embed] });
             });
           }
           break;
@@ -61,7 +66,7 @@ client.on("guildMemberAdd", (member) => {
   if (member.guild.id === "828708982506913792") {
     client.channels.cache.get("828765547663196191")?.send({
       content: `<@${member.id}>`,
-      embed: constants.autowelcome.embed,
+      embeds: [constants.autowelcome.embed],
     });
     member.send({ content: constants.autowelcome.dm });
   }
@@ -76,7 +81,7 @@ async function updateVerifiedStudents() {
    * 1. DiscordTag (automatically filled in by Google Form)
    * 2. DiscordTagCache (copy of DiscordTag made by this function)
    * 3. DiscordId (filled in by this function)
-   * If DiscordTag Cache is different from DiscordTag, then the DiscordId is updated.
+   * If DiscordTagCache is different from DiscordTag, then the DiscordId is updated.
    */
   const promises = [];
 
@@ -89,8 +94,11 @@ async function updateVerifiedStudents() {
     (row) => row.DiscordTagCache !== row.DiscordTag
   );
   for (const row of updatedRows) {
-    let user = client.users.cache.find(
-      (u) => u.tag.toLowerCase() === row.DiscordTag.toLowerCase()
+    // console.log(`[~] ${row.DiscordTag} attempting to update...`);
+    let user = client.users.cache.find((u) =>
+      u.discriminator
+        ? `${u.username}#${u.discriminator}` === row.DiscordTag
+        : u.username === row.DiscordTag.toLowerCase()
     );
     if (!user) continue;
 
@@ -170,9 +178,9 @@ async function updateVerifiedStudents() {
         await guild.members.cache.get(userId)?.roles.remove(verifiedRole);
       }
 
-      console.log(
-        `Updated ${guild.name} with ${posDiff.length} new members and ${negDiff.length} removed members.`
-      );
+      // console.log(
+      //   `Updated ${guild.name} with ${posDiff.length} new members and ${negDiff.length} removed members.`
+      // );
     })
   );
 
