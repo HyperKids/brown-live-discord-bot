@@ -96,7 +96,7 @@ async function updateVerifiedStudents() {
   for (const row of updatedRows) {
     // console.log(`[~] ${row.DiscordTag} attempting to update...`);
     let user = client.users.cache.find((u) =>
-      u.discriminator
+      u.discriminator?.length === 4
         ? `${u.username}#${u.discriminator}` === row.DiscordTag
         : u.username === row.DiscordTag.toLowerCase()
     );
