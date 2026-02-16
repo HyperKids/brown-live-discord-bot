@@ -21,6 +21,7 @@ const fs = require("fs");
 
 const config = JSON.parse(fs.readFileSync("config.json", "utf-8"));
 const constants = require("./constants");
+const servers = require("./verification.json");
 
 const { GoogleSpreadsheet } = require("google-spreadsheet");
 const doc = new GoogleSpreadsheet(process.env.GOOGLE_SPREADSHEET);
@@ -36,7 +37,7 @@ client.on("ready", async () => {
   });
   await doc.loadInfo();
 
-  setInterval(updateVerifiedStudents, 1000 * 15);
+  setInterval(updateVerifiedStudents, 1000 * 60);
 });
 
 client.on("message", (msg) => {
@@ -76,6 +77,21 @@ client.on("guildMemberAdd", (member) => {
 //   reaction.message.react(reaction.emoji)
 // })
 
+/**
+ * Fetch all guild members using the REST API (paginated).
+ * Unlike guild.members.fetch(), this uses GET /guilds/{id}/members
+ * and cannot trigger GuildMembersTimeout.
+ */
+async function fetchAllMembersPaginated(guild) {
+  let lastId = '0';
+  while (true) {
+    const batch = await guild.members.list({ limit: 1000, after: lastId });
+    if (batch.size === 0) break;
+    lastId = batch.lastKey();
+    if (batch.size < 1000) break;
+  }
+}
+
 async function updateVerifiedStudents() {
   /* Three columns in the Google Sheet:
    * 1. DiscordTag (automatically filled in by Google Form)
@@ -83,108 +99,94 @@ async function updateVerifiedStudents() {
    * 3. DiscordId (filled in by this function)
    * If DiscordTagCache is different from DiscordTag, then the DiscordId is updated.
    */
-  const promises = [];
+  try {
+    console.log('[sync] Starting verification sync...');
 
-  const sheet = doc.sheetsByIndex[0];
-  const rows = await sheet.getRows();
-  const servers = require("./verification.json");
+    // Step 1: Fetch all guild members first to populate client.users.cache
+    // This MUST happen before tag resolution, since we search client.users.cache
+    for (const server of servers) {
+      try {
+        const guild = await client.guilds.fetch(server.guildid);
+        await fetchAllMembersPaginated(guild);
+        console.log(`[sync] Fetched members for ${guild.name} (${guild.members.cache.size} cached)`);
+      } catch (err) {
+        console.error(`[sync] Failed to fetch members for guild ${server.guildid}:`, err);
+      }
+    }
 
-  // Get the DiscordIds from the DiscordTags (if necessary)
-  const updatedRows = rows.filter(
-    (row) => row.DiscordTagCache !== row.DiscordTag
-  );
-  for (const row of updatedRows) {
-    // console.log(`[~] ${row.DiscordTag} attempting to update...`);
-    let user = client.users.cache.find((u) =>
-      u.discriminator?.length === 4
-        ? `${u.username}#${u.discriminator}` === row.DiscordTag
-        : u.username === row.DiscordTag.toLowerCase()
+    // Step 2: Resolve DiscordTags to DiscordIds using the now-populated cache
+    const sheet = doc.sheetsByIndex[0];
+    const rows = await sheet.getRows();
+
+    const updatedRows = rows.filter(
+      (row) => row.DiscordTagCache !== row.DiscordTag
     );
-    if (!user) continue;
+    console.log(`[sync] ${updatedRows.length} rows need tag resolution`);
 
-    row.DiscordId = user.id;
-    row.DiscordTagCache = row.DiscordTag;
-    promises.push(row.save());
-  }
+    const rowSavePromises = [];
+    for (const row of updatedRows) {
+      let user = client.users.cache.find((u) =>
+        u.discriminator?.length === 4
+          ? `${u.username}#${u.discriminator}` === row.DiscordTag
+          : u.username === row.DiscordTag.toLowerCase()
+      );
+      if (!user) {
+        console.log(`[sync] Could not find user for tag: ${row.DiscordTag}`);
+        continue;
+      }
 
-  /* servers.forEach(({ guildid: guildId, verifiedroleid: verifiedRoleId }) => {
-    client.guilds.fetch(guildId).then((guild) => {
-      guild.members.fetch().then((members) => {
-        const verifiedRoleMembers = guild.roles.cache
-          .get(verifiedRoleId)
-          ?.members.map((m) => m.user.tag.toLowerCase());
-        const gSheetTags = discordUsernames.map((v) => v.toLowerCase());
-        const posDiff = gSheetTags
-          .filter((x) => !verifiedRoleMembers?.includes(x.toLowerCase()))
-          .map((v) => v.toLowerCase()); // filters to differences between the two arrays - verifiedRoleMembers is
-        // current members on the server with the "Verified" role, res.data.values[0]
-        // is Google Form list of DiscordTags that should have the role
-        // const posdiff = diff // diff.filter((x) => gsheettags.includes(x));
-        const negDiff = verifiedRoleMembers
-          .filter((x) => !gSheetTags.includes(x.toLowerCase()))
-          .map((v) => v.toLowerCase()); // diff.filter((x) => verifiedrolemembers.includes(x));
-        const diff = posDiff.concat(negDiff);
-        diff.forEach((DiscordTag) => {
-          const user = client.users.cache.find(
-            (u) => u.tag.toLowerCase() === DiscordTag.toLowerCase()
-          )?.id;
-          if (user) {
-            const guildUser = guild.members
-              .fetch(user)
-              .then((guildUser) => {
-                const username = guildUser.user.username.toLowerCase();
-                const discrim = guildUser.user.discriminator;
-                if (posDiff.includes(username + "#" + discrim)) {
-                  guildUser.roles.add(verifiedRoleId).catch(console.error);
-                  console.log("+" + username);
-                } else if (negDiff.includes(username + "#" + discrim)) {
-                  guildUser.roles.remove(verifiedRoleId).catch(console.error);
-                  console.log("-" + username);
-                }
-              })
-              .catch(console.error);
-          } else {
-            // console.log(`${DiscordTag} is invalid!`);
-          }
-        });
-      });
-    });
-  }); */
+      console.log(`[sync] Resolved ${row.DiscordTag} -> ${user.id}`);
+      row.DiscordId = user.id;
+      row.DiscordTagCache = row.DiscordTag;
+      rowSavePromises.push(row.save());
+    }
+    await Promise.all(rowSavePromises);
 
-  promises.push(
-    servers.map(async (server) => {
-      const guild = await client.guilds.fetch(server.guildid);
-      const members = await guild.members.fetch();
-      const verifiedRole = guild.roles.cache.get(server.verifiedroleid);
-      if (!verifiedRole) {
-        console.error(
-          `Verified role ${server.verifiedroleid} not found in ${guild.name}!`
+    // Step 3: Sync verified roles for each guild
+    for (const server of servers) {
+      try {
+        const guild = await client.guilds.fetch(server.guildid);
+
+        const verifiedRole = guild.roles.cache.get(server.verifiedroleid);
+        if (!verifiedRole) {
+          console.error(
+            `[sync] Verified role ${server.verifiedroleid} not found in ${guild.name}!`
+          );
+          continue;
+        }
+
+        const verifiedRoleMembers = verifiedRole.members.map((m) => m.user.id);
+        const sheetVerifiedMembers = rows.map((row) => row.DiscordId);
+        const posDiff = sheetVerifiedMembers.filter(
+          (x) => x && !verifiedRoleMembers.includes(x)
         );
-        return;
-      }
+        const negDiff = verifiedRoleMembers.filter(
+          (x) => x && !sheetVerifiedMembers.includes(x)
+        );
 
-      const verifiedRoleMembers = verifiedRole.members.map((m) => m.user.id);
-      const sheetVerifiedMembers = rows.map((row) => row.DiscordId);
-      const posDiff = sheetVerifiedMembers.filter(
-        (x) => !verifiedRoleMembers.includes(x)
-      );
-      const negDiff = verifiedRoleMembers.filter(
-        (x) => !sheetVerifiedMembers.includes(x)
-      );
-      for (const userId of posDiff) {
-        await guild.members.cache.get(userId)?.roles.add(verifiedRole);
+        for (const userId of posDiff) {
+          const member = guild.members.cache.get(userId);
+          if (member) {
+            await member.roles.add(verifiedRole);
+            console.log(`[sync] +role ${member.user.username} in ${guild.name}`);
+          }
+        }
+        for (const userId of negDiff) {
+          const member = guild.members.cache.get(userId);
+          if (member) {
+            await member.roles.remove(verifiedRole);
+            console.log(`[sync] -role ${member.user.username} in ${guild.name}`);
+          }
+        }
+      } catch (err) {
+        console.error(`[sync] Failed to sync roles for guild ${server.guildid}:`, err);
       }
-      for (const userId of negDiff) {
-        await guild.members.cache.get(userId)?.roles.remove(verifiedRole);
-      }
+    }
 
-      // console.log(
-      //   `Updated ${guild.name} with ${posDiff.length} new members and ${negDiff.length} removed members.`
-      // );
-    })
-  );
-
-  await Promise.all(promises).catch(console.error);
+    console.log('[sync] Verification sync complete.');
+  } catch (err) {
+    console.error('[sync] Failed to update verified students:', err);
+  }
 }
 
 const http = require("http");
@@ -193,6 +195,10 @@ const server = http.createServer((req, res) => {
   res.end("ok");
 });
 server.listen(process.env.PORT || 3000);
+
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled promise rejection:', err);
+});
 
 try {
   client.login(process.env.DISCORDBOTTOKEN).catch((err) => {
