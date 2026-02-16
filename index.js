@@ -23,6 +23,39 @@ const config = JSON.parse(fs.readFileSync("config.json", "utf-8"));
 const constants = require("./constants");
 const servers = require("./verification.json");
 
+// In-memory backoff for failed tag lookups
+const failedTagLookups = new Map();
+const RETRY_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+
+// Set of unresolved tags (lowercase), refreshed each polling cycle
+const unresolvedTags = new Set();
+
+// Daily stats — accumulates throughout the day, logged once at midnight
+let dailyStats = {
+  tagsResolved: 0,
+  legacyTagsSkipped: 0,
+  tagsNotFound: 0,
+  rolesAdded: 0,
+  rolesRemoved: 0,
+  eventResolutions: 0,
+  errors: 0,
+  syncCycles: 0,
+};
+
+function logDailySummary() {
+  const s = dailyStats;
+  console.log(
+    `[daily] Sync cycles: ${s.syncCycles} | Resolved: ${s.tagsResolved} | ` +
+    `Legacy skipped: ${s.legacyTagsSkipped} | Not found: ${s.tagsNotFound} | ` +
+    `Roles +${s.rolesAdded}/-${s.rolesRemoved} | ` +
+    `Event resolutions: ${s.eventResolutions} | Errors: ${s.errors}`
+  );
+  dailyStats = {
+    tagsResolved: 0, legacyTagsSkipped: 0, tagsNotFound: 0,
+    rolesAdded: 0, rolesRemoved: 0, eventResolutions: 0, errors: 0, syncCycles: 0,
+  };
+}
+
 const { GoogleSpreadsheet } = require("google-spreadsheet");
 const doc = new GoogleSpreadsheet(process.env.GOOGLE_SPREADSHEET);
 
@@ -38,6 +71,18 @@ client.on("ready", async () => {
   await doc.loadInfo();
 
   setInterval(updateVerifiedStudents, 1000 * 60);
+
+  // Log daily summary at midnight and reset counters
+  function scheduleNextSummary() {
+    const now = new Date();
+    const midnight = new Date(now);
+    midnight.setHours(24, 0, 0, 0);
+    setTimeout(() => {
+      logDailySummary();
+      setInterval(logDailySummary, 24 * 60 * 60 * 1000);
+    }, midnight - now);
+  }
+  scheduleNextSummary();
 });
 
 client.on("message", (msg) => {
@@ -63,7 +108,7 @@ client.on("message", (msg) => {
   }
 });
 
-client.on("guildMemberAdd", (member) => {
+client.on("guildMemberAdd", async (member) => {
   if (member.guild.id === "828708982506913792") {
     client.channels.cache.get("828765547663196191")?.send({
       content: `<@${member.id}>`,
@@ -71,7 +116,63 @@ client.on("guildMemberAdd", (member) => {
     });
     member.send({ content: constants.autowelcome.dm });
   }
+  await tryResolveNewMember(member);
 });
+
+client.on("guildMemberUpdate", async (oldMember, newMember) => {
+  if (oldMember.user.username !== newMember.user.username) {
+    await tryResolveNewMember(newMember);
+  }
+});
+
+/**
+ * When a user joins or changes their username, check if they match
+ * an unresolved spreadsheet tag. If so, resolve immediately.
+ */
+async function tryResolveNewMember(member) {
+  const username = member.user.username.toLowerCase();
+  if (!unresolvedTags.has(username)) return;
+
+  try {
+    const sheet = doc.sheetsByIndex[0];
+    const rows = await sheet.getRows();
+    const row = rows.find(
+      (r) => r.DiscordTagCache !== r.DiscordTag &&
+             !r.DiscordTag.includes('#') &&
+             r.DiscordTag.toLowerCase() === username
+    );
+    if (!row) return;
+
+    row.DiscordId = member.user.id;
+    row.DiscordTagCache = row.DiscordTag;
+    await row.save();
+    dailyStats.eventResolutions++;
+
+    unresolvedTags.delete(username);
+    failedTagLookups.delete(row.DiscordTag);
+
+    // Assign verified role on all servers where this member is present
+    for (const server of servers) {
+      try {
+        const guild = await client.guilds.fetch(server.guildid);
+        const guildMember = guild.members.cache.get(member.user.id);
+        if (!guildMember) continue;
+        const verifiedRole = guild.roles.cache.get(server.verifiedroleid);
+        if (!verifiedRole) continue;
+        if (!guildMember.roles.cache.has(verifiedRole.id)) {
+          await guildMember.roles.add(verifiedRole);
+          dailyStats.rolesAdded++;
+        }
+      } catch (err) {
+        dailyStats.errors++;
+        console.error(`[event] Failed to assign role in guild ${server.guildid}:`, err);
+      }
+    }
+  } catch (err) {
+    dailyStats.errors++;
+    console.error(`[event] Failed to resolve ${username}:`, err);
+  }
+}
 
 // client.on("messageReactionAdd", (reaction, user) => {
 //   reaction.message.react(reaction.emoji)
@@ -100,16 +201,15 @@ async function updateVerifiedStudents() {
    * If DiscordTagCache is different from DiscordTag, then the DiscordId is updated.
    */
   try {
-    console.log('[sync] Starting verification sync...');
+    dailyStats.syncCycles++;
 
     // Step 1: Fetch all guild members first to populate client.users.cache
-    // This MUST happen before tag resolution, since we search client.users.cache
     for (const server of servers) {
       try {
         const guild = await client.guilds.fetch(server.guildid);
         await fetchAllMembersPaginated(guild);
-        console.log(`[sync] Fetched members for ${guild.name} (${guild.members.cache.size} cached)`);
       } catch (err) {
+        dailyStats.errors++;
         console.error(`[sync] Failed to fetch members for guild ${server.guildid}:`, err);
       }
     }
@@ -121,26 +221,54 @@ async function updateVerifiedStudents() {
     const updatedRows = rows.filter(
       (row) => row.DiscordTagCache !== row.DiscordTag
     );
-    console.log(`[sync] ${updatedRows.length} rows need tag resolution`);
 
-    const rowSavePromises = [];
+    // Rebuild the unresolved tags set for event-driven resolution
+    unresolvedTags.clear();
+
+    const rowsToSave = [];
     for (const row of updatedRows) {
-      let user = client.users.cache.find((u) =>
-        u.discriminator?.length === 4
-          ? `${u.username}#${u.discriminator}` === row.DiscordTag
-          : u.username === row.DiscordTag.toLowerCase()
-      );
-      if (!user) {
-        console.log(`[sync] Could not find user for tag: ${row.DiscordTag}`);
+      if (row.DiscordTag.includes('#')) {
+        row.DiscordTagCache = row.DiscordTag;
+        rowsToSave.push(row);
+        dailyStats.legacyTagsSkipped++;
         continue;
       }
 
-      console.log(`[sync] Resolved ${row.DiscordTag} -> ${user.id}`);
+      const lastFailed = failedTagLookups.get(row.DiscordTag);
+      if (lastFailed && Date.now() - lastFailed < RETRY_INTERVAL_MS) {
+        unresolvedTags.add(row.DiscordTag.toLowerCase());
+        continue;
+      }
+
+      let user = client.users.cache.find(
+        (u) => u.username.toLowerCase() === row.DiscordTag.toLowerCase()
+      );
+      if (!user) {
+        failedTagLookups.set(row.DiscordTag, Date.now());
+        unresolvedTags.add(row.DiscordTag.toLowerCase());
+        dailyStats.tagsNotFound++;
+        continue;
+      }
+
       row.DiscordId = user.id;
       row.DiscordTagCache = row.DiscordTag;
-      rowSavePromises.push(row.save());
+      failedTagLookups.delete(row.DiscordTag);
+      rowsToSave.push(row);
+      dailyStats.tagsResolved++;
     }
-    await Promise.all(rowSavePromises);
+
+    // Save rows sequentially with throttling to stay under Google Sheets
+    // API quota (60 writes/min). First run may be slow with many legacy tags.
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    for (const row of rowsToSave) {
+      try {
+        await row.save();
+        await delay(1100);
+      } catch (err) {
+        dailyStats.errors++;
+        console.error(`[sync] Failed to save row for ${row.DiscordTag}:`, err.message);
+      }
+    }
 
     // Step 3: Sync verified roles for each guild
     for (const server of servers) {
@@ -168,23 +296,23 @@ async function updateVerifiedStudents() {
           const member = guild.members.cache.get(userId);
           if (member) {
             await member.roles.add(verifiedRole);
-            console.log(`[sync] +role ${member.user.username} in ${guild.name}`);
+            dailyStats.rolesAdded++;
           }
         }
         for (const userId of negDiff) {
           const member = guild.members.cache.get(userId);
           if (member) {
             await member.roles.remove(verifiedRole);
-            console.log(`[sync] -role ${member.user.username} in ${guild.name}`);
+            dailyStats.rolesRemoved++;
           }
         }
       } catch (err) {
+        dailyStats.errors++;
         console.error(`[sync] Failed to sync roles for guild ${server.guildid}:`, err);
       }
     }
-
-    console.log('[sync] Verification sync complete.');
   } catch (err) {
+    dailyStats.errors++;
     console.error('[sync] Failed to update verified students:', err);
   }
 }
