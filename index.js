@@ -187,4 +187,19 @@ async function updateVerifiedStudents() {
   await Promise.all(promises).catch(console.error);
 }
 
-client.login(process.env.DISCORDBOTTOKEN);
+const http = require("http");
+const server = http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("ok");
+});
+server.listen(process.env.PORT || 3000);
+
+try {
+  client.login(process.env.DISCORDBOTTOKEN).catch((err) => {
+    console.error("Failed to login to Discord:", err);
+  });
+} catch (err) {
+  console.error("Failed to login to Discord (synchronous error):", err);
+}
+
+
