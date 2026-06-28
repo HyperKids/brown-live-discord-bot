@@ -42,11 +42,6 @@ module.exports.welcome = [
             "If somebody says something that breaks our rules, annoys, or offends you, contact a staff member. Don't start a flame war in the channel.",
         },
         {
-          name: "6. Keep the server friendly",
-          value:
-            "If somebody says something that breaks our rules, annoys, or offends you, contact a staff member. Don't start a flame war in the channel.",
-        },
-        {
           name: "7. Follow Discord's Terms of Service",
           value: "Please familiarize yourself with Discord's Terms of Service and Community Guidelines and abide by them. https://dis.gd/terms https://dis.gd/guidelines"
         },
