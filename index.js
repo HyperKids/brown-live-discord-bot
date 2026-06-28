@@ -76,11 +76,19 @@ client.on("ready", async () => {
   console.log(`Logged in as ${client.user?.tag}!`);
   client.guilds.fetch("828708982506913792"); // TODO: don't hardcode this
 
-  await doc.useServiceAccountAuth({
-    client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    private_key: process.env.GOOGLE_PRIVATE_KEY,
-  });
-  await doc.loadInfo();
+  // If Google auth/loadInfo fails here, the sync interval below would never be
+  // registered and the bot would sit online doing nothing, silently. Exit so the
+  // supervisor (Coolify) restarts us instead of running in a broken state.
+  try {
+    await doc.useServiceAccountAuth({
+      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      private_key: process.env.GOOGLE_PRIVATE_KEY,
+    });
+    await doc.loadInfo();
+  } catch (err) {
+    console.error("Failed to initialize Google Sheets — exiting for restart:", err);
+    process.exit(1);
+  }
 
   setInterval(updateVerifiedStudents, 1000 * 60);
 
@@ -128,8 +136,11 @@ client.on("guildMemberAdd", async (member) => {
     client.channels.cache.get("828765547663196191")?.send({
       content: `<@${member.id}>`,
       embeds: [withSendTime(constants.autowelcome.embed)],
-    });
-    member.send({ content: constants.autowelcome.dm });
+    }).catch((err) => console.error("[welcome] Failed to send welcome message:", err));
+    // Users with DMs disabled will reject here — swallow it so it doesn't
+    // surface as an unhandled rejection (and now crash the process via the
+    // handler below).
+    member.send({ content: constants.autowelcome.dm }).catch(() => {});
   }
   await tryResolveNewMember(member);
 });
@@ -365,7 +376,12 @@ const server = http.createServer((req, res) => {
 server.listen(process.env.PORT || 3000);
 
 process.on('unhandledRejection', (err) => {
-  console.error('Unhandled promise rejection:', err);
+  // Exit on unexpected rejections so the supervisor (Coolify) restarts a clean
+  // process rather than letting the bot run in an undefined/wedged state. Known
+  // best-effort sends (welcome message, DM) are caught at their call sites so
+  // they don't trip this.
+  console.error('Unhandled promise rejection — exiting for restart:', err);
+  process.exit(1);
 });
 
 try {
