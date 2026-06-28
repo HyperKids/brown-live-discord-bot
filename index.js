@@ -15,6 +15,10 @@ const client = new Discord.Client({
   intents: [
     Discord.GatewayIntentBits.Guilds,
     Discord.GatewayIntentBits.GuildMembers,
+    Discord.GatewayIntentBits.GuildMessages,
+    // Privileged — must also be enabled in the Discord Dev Portal. Required for
+    // msg.content to be populated so the "-update" command can be parsed.
+    Discord.GatewayIntentBits.MessageContent,
   ],
 });
 const fs = require("fs");
@@ -22,6 +26,14 @@ const fs = require("fs");
 const config = JSON.parse(fs.readFileSync("config.json", "utf-8"));
 const constants = require("./constants");
 const servers = require("./verification.json");
+
+// Embeds in constants.js carry a `timestamp` set once at module load (i.e. when
+// the bot boots). Refresh it to the current time whenever we actually send an
+// embed so the footer reflects when the message was sent, not boot time.
+// Embeds without a timestamp (e.g. partner embeds) are returned unchanged.
+function withSendTime(embed) {
+  return embed && embed.timestamp ? { ...embed, timestamp: new Date() } : embed;
+}
 
 // In-memory backoff for failed tag lookups
 const failedTagLookups = new Map();
@@ -85,8 +97,8 @@ client.on("ready", async () => {
   scheduleNextSummary();
 });
 
-client.on("message", (msg) => {
-  if (!msg.author.bot && msg.type === "DEFAULT") {
+client.on("messageCreate", (msg) => {
+  if (!msg.author.bot && msg.type === Discord.MessageType.Default) {
     if (msg.content.substring(0, config.prefix.length) === config.prefix) {
       const message = msg.content;
       let args = message.substring(1).split(" ");
@@ -99,7 +111,10 @@ client.on("message", (msg) => {
         case "update":
           if (isHyper) {
             constants[args[0]]?.forEach((obj) => {
-              msg.channel.send({ content: obj.text, embeds: [obj.embed] });
+              msg.channel.send({
+                content: obj.text,
+                embeds: obj.embed ? [withSendTime(obj.embed)] : [],
+              });
             });
           }
           break;
@@ -112,7 +127,7 @@ client.on("guildMemberAdd", async (member) => {
   if (member.guild.id === "828708982506913792") {
     client.channels.cache.get("828765547663196191")?.send({
       content: `<@${member.id}>`,
-      embeds: [constants.autowelcome.embed],
+      embeds: [withSendTime(constants.autowelcome.embed)],
     });
     member.send({ content: constants.autowelcome.dm });
   }
@@ -203,11 +218,16 @@ async function updateVerifiedStudents() {
   try {
     dailyStats.syncCycles++;
 
-    // Step 1: Fetch all guild members first to populate client.users.cache
+    // Step 1: Fetch all guild members first to populate client.users.cache.
+    // Track which guilds fully loaded — role sync below must only run against a
+    // guild whose member cache is complete, otherwise a partial cache can look
+    // like "nobody has the role" and trigger mass removals.
+    const fetchedGuilds = new Set();
     for (const server of servers) {
       try {
         const guild = await client.guilds.fetch(server.guildid);
         await fetchAllMembersPaginated(guild);
+        fetchedGuilds.add(server.guildid);
       } catch (err) {
         dailyStats.errors++;
         console.error(`[sync] Failed to fetch members for guild ${server.guildid}:`, err);
@@ -271,7 +291,18 @@ async function updateVerifiedStudents() {
     }
 
     // Step 3: Sync verified roles for each guild
+    const sheetVerifiedMembers = rows.map((row) => row.DiscordId).filter(Boolean);
     for (const server of servers) {
+      // Skip guilds whose member list failed to load this cycle. Their member
+      // cache is stale/incomplete, so any add/remove decision would be unreliable
+      // and could strip the verified role from legitimately verified students.
+      if (!fetchedGuilds.has(server.guildid)) {
+        console.error(
+          `[sync] Skipping role sync for guild ${server.guildid} — member fetch failed this cycle`
+        );
+        continue;
+      }
+
       try {
         const guild = await client.guilds.fetch(server.guildid);
 
@@ -284,9 +315,8 @@ async function updateVerifiedStudents() {
         }
 
         const verifiedRoleMembers = verifiedRole.members.map((m) => m.user.id);
-        const sheetVerifiedMembers = rows.map((row) => row.DiscordId);
         const posDiff = sheetVerifiedMembers.filter(
-          (x) => x && !verifiedRoleMembers.includes(x)
+          (x) => !verifiedRoleMembers.includes(x)
         );
         const negDiff = verifiedRoleMembers.filter(
           (x) => x && !sheetVerifiedMembers.includes(x)
@@ -298,6 +328,16 @@ async function updateVerifiedStudents() {
             await member.roles.add(verifiedRole);
             dailyStats.rolesAdded++;
           }
+        }
+
+        // Guard against mass removal: if the sheet produced no verified IDs at
+        // all this cycle (e.g. a malformed read), do not treat everyone holding
+        // the role as unverified.
+        if (sheetVerifiedMembers.length === 0) {
+          console.error(
+            `[sync] Skipping role removals for guild ${server.guildid} — sheet returned no verified members`
+          );
+          continue;
         }
         for (const userId of negDiff) {
           const member = guild.members.cache.get(userId);

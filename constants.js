@@ -1,7 +1,7 @@
 module.exports.welcome = [
   {
     embed: {
-      title: "<:brown:828861823134203925> Brown Live Discord Guidelines",
+      title: "<:brown:828861823134203925> Brown Community Discord Guidelines",
       description:
         "These are guidelines that should be followed on our Discord server.",
       color: 0xc00404,
@@ -59,9 +59,9 @@ module.exports.welcome = [
   },
   {
     embed: {
-      title: "Get verified across the Brown Live network!",
+      title: "Get verified across the Brown Community Discord network!",
       description:
-        "Visit our verification form at https://bit.ly/brownulive and type in your DiscordTag.  Once you're verified, you'll get access to all the private channels, where everything happens! Plus, you'll be automatically verified on some of our partnered servers!",
+        "Visit our verification form at https://brownu.live/verify and type in your DiscordTag.  Once you're verified, you'll get access to all the private channels, where everything happens! Plus, you'll be automatically verified on some of our partnered servers!",
       color: 0x43b581,
       timestamp: new Date(),
       footer: {
@@ -160,8 +160,8 @@ module.exports.co2025 = [
 
 module.exports.autowelcome = {
   embed: {
-    title: "Welcome to Brown Live!",
-    description: "Welcome to Brown Live, a hub for Brown and RISD students! To get started, read the rules in <#828714184778579968>, then fill out this Google Form to get access to the rest of the channels! Thanks for joining, and talk to you soon! https://bit.ly/brownulive",
+    title: "Welcome to Brown Community Discord!",
+    description: "Welcome to Brown Community Discord, a hub for Brown and RISD students! To get started, read the rules in <#828714184778579968>, then fill out this Google Form to get access to the rest of the channels! Thanks for joining, and talk to you soon! https://brownu.live/verify",
     color: 0xc00404,
     timestamp: new Date(),
     footer: {
@@ -169,7 +169,7 @@ module.exports.autowelcome = {
       text: "Welcome!",
     },
   },
-  dm: "Welcome to the Brown Live Discord!\nPlease take some time to read the <#828714184778579968> before using the server.\n\nTo view all the channels (and join the party), fill out this Google Form! You'll get automatic verification across many Brown Live partnered servers as well! <https://bit.ly/brownulive>\n\nThanks for joining, and enjoy your time here!\nhttps://discord.gg/R3WRygthgX"
+  dm: "Welcome to Brown Community Discord!\nPlease take some time to read the <#828714184778579968> before using the server.\n\nTo view all the channels (and join the party), fill out this Google Form! You'll get automatic verification across many Brown Community Discord partnered servers as well! <https://brownu.live/verify>\n\nThanks for joining, and enjoy your time here!\nhttps://discord.gg/R3WRygthgX"
 }
 
 module.exports.roleselect = [

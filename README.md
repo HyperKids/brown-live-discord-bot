@@ -1,6 +1,6 @@
 # Brown Live Discord Bot (Blueno)
 
-This bot verifies Discord users as students of Brown University. The verification form is available at https://bit.ly/brownulive (only available to logged-in @brown.edu Google accounts).
+This bot verifies Discord users as students of Brown University. The verification form is available at https://brownu.live/verify (only available to logged-in @brown.edu Google accounts).
 
 With some light work, this bot can be used on any server (or group of servers). It will allow you to force new users to send you information via Google Forms, then get automatically verified on the server.
 
